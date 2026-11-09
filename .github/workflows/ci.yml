@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Test backend (Node 20)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        run: npm test -- --ci
+
+  docker:
+    name: Docker build + smoke test
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Deploy with compose
+        run: docker compose up -d --wait
+
+      - name: Smoke test
+        run: |
+          curl -fsS http://localhost:3000/health
+          echo
+          curl -fsS http://localhost:8080/health
+          echo
+          curl -fsS "http://localhost:8080/api/cities?q=colombia"
+          echo
+
+      - name: Logs
+        if: always()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --remove-orphans
