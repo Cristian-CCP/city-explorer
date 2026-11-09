@@ -21,3 +21,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+
+# Entorno virtual de Python (generación del documento)
+.venv/
