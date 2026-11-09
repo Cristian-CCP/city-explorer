@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Cobertura y reportes de pruebas
+coverage/
+junit.xml
+
+# Variables de entorno
+.env
+.env.*
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
