@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="City Explorer: consulta, filtra y agrega ciudades." />
+  <title>City Explorer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌎</text></svg>" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="container header__inner">
+      <div class="brand">
+        <span class="brand__logo" aria-hidden="true">🌎</span>
+        <div>
+          <h1 class="brand__title">City Explorer</h1>
+          <p class="brand__subtitle">Consulta, filtra y agrega ciudades del mundo</p>
+        </div>
+      </div>
+      <div class="api-status" id="api-status" role="status" aria-live="polite">
+        <span class="api-status__dot"></span>
+        <span class="api-status__text">Verificando API…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container layout">
+    <section class="panel panel--list" aria-labelledby="list-title">
+      <div class="panel__header">
+        <h2 id="list-title" class="panel__title">Ciudades</h2>
+        <span class="badge" id="city-count">0</span>
+      </div>
+
+      <div class="search">
+        <label for="search-input" class="sr-only">Buscar ciudades</label>
+        <span class="search__icon" aria-hidden="true">🔍</span>
+        <input
+          id="search-input"
+          class="search__input"
+          type="search"
+          placeholder="Buscar por ciudad, país o continente…"
+          autocomplete="off"
+        />
+      </div>
+
+      <div id="loading" class="state state--loading" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <p>Cargando ciudades…</p>
+      </div>
+
+      <div id="error" class="state state--error" role="alert" hidden>
+        <p class="state__title">No se pudo conectar con la API</p>
+        <p class="state__message" id="error-message"></p>
+        <button type="button" class="btn btn--secondary" id="retry-btn">Reintentar</button>
+      </div>
+
+      <div id="empty" class="state state--empty" hidden>
+        <p>No se encontraron ciudades para tu búsqueda.</p>
+      </div>
+
+      <ul id="city-list" class="city-list" aria-live="polite"></ul>
+    </section>
+
+    <aside class="panel panel--form" aria-labelledby="form-title">
+      <h2 id="form-title" class="panel__title">Agregar ciudad</h2>
+
+      <form id="city-form" class="form" novalidate>
+        <div class="form__field">
+          <label for="name">Nombre *</label>
+          <input id="name" name="name" type="text" required minlength="2" maxlength="80" placeholder="Ej. Cartagena" />
+        </div>
+
+        <div class="form__field">
+          <label for="country">País *</label>
+          <input id="country" name="country" type="text" required minlength="2" maxlength="80" placeholder="Ej. Colombia" />
+        </div>
+
+        <div class="form__field">
+          <label for="continent">Continente</label>
+          <select id="continent" name="continent">
+            <option value="América">América</option>
+            <option value="Europa">Europa</option>
+            <option value="Asia">Asia</option>
+            <option value="África">África</option>
+            <option value="Oceanía">Oceanía</option>
+          </select>
+        </div>
+
+        <div class="form__field">
+          <label for="population">Población *</label>
+          <input id="population" name="population" type="number" required min="0" step="1" placeholder="Ej. 1028000" />
+        </div>
+
+        <button type="submit" class="btn btn--primary" id="submit-btn">Agregar ciudad</button>
+        <p id="form-message" class="form__message" role="status" aria-live="polite"></p>
+      </form>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>City Explorer · Frontend (Nginx) ⇄ Backend (Node.js + Express) en la red <code>ci-network</code></p>
+    </div>
+  </footer>
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
