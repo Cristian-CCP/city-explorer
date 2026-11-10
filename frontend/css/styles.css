@@ -54,7 +54,6 @@ body {
   border: 0;
 }
 
-/* ---------- Header ---------- */
 .header {
   background: linear-gradient(135deg, #1e3a8a, var(--color-primary));
   color: #fff;
@@ -118,7 +117,6 @@ body {
   background: #f87171;
 }
 
-/* ---------- Layout ---------- */
 .layout {
   display: grid;
   grid-template-columns: 1fr 340px;
@@ -166,7 +164,6 @@ body {
   border-radius: 999px;
 }
 
-/* ---------- Search ---------- */
 .search {
   position: relative;
   margin-bottom: 1.25rem;
@@ -199,7 +196,6 @@ body {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
-/* ---------- City list ---------- */
 .city-list {
   list-style: none;
   margin: 0;
@@ -213,6 +209,8 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 1rem 1.1rem;
+  content-visibility: auto;
+  contain-intrinsic-size: 96px;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   animation: fade-in 0.25s ease-out;
 }
@@ -254,7 +252,6 @@ body {
   color: var(--color-text);
 }
 
-/* ---------- States ---------- */
 .state {
   text-align: center;
   padding: 2.5rem 1rem;
@@ -292,7 +289,6 @@ body {
   margin-bottom: 0.5rem;
 }
 
-/* ---------- Form ---------- */
 .form__field {
   display: flex;
   flex-direction: column;
@@ -329,7 +325,6 @@ body {
   color: var(--color-danger);
 }
 
-/* ---------- Buttons ---------- */
 .btn {
   border: none;
   border-radius: 8px;
@@ -366,7 +361,6 @@ body {
   background: #fee2e2;
 }
 
-/* ---------- Footer ---------- */
 .footer {
   text-align: center;
   color: var(--color-muted);
@@ -380,7 +374,6 @@ body {
   border-radius: 4px;
 }
 
-/* ---------- Animations ---------- */
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -398,7 +391,6 @@ body {
   }
 }
 
-/* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   .layout {
     grid-template-columns: 1fr;
