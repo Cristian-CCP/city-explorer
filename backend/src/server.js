@@ -1,25 +1,23 @@
 'use strict';
 
-const { createApp } = require('./app');
+const { app } = require('./app');
+const config = require('./config');
 
-const PORT = Number(process.env.PORT) || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
-
-const app = createApp();
-
-const server = app.listen(PORT, HOST, () => {
-  console.log(`[city-explorer-backend] escuchando en http://${HOST}:${PORT}`);
+const server = app.listen(config.port, config.host, () => {
+  console.log(`[city-explorer-backend] Listening on http://${config.host}:${config.port}`);
 });
 
-// Apagado ordenado: Docker envía SIGTERM al hacer "docker compose down/stop".
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+
 function shutdown(signal) {
-  console.log(`[city-explorer-backend] ${signal} recibido, cerrando servidor...`);
+  console.log(`[city-explorer-backend] Received ${signal}. Closing HTTP server...`);
   server.close(() => {
-    console.log('[city-explorer-backend] servidor cerrado');
     process.exit(0);
   });
-  setTimeout(() => process.exit(1), 10000).unref();
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+module.exports = server;

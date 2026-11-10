@@ -2,71 +2,67 @@
 
 const express = require('express');
 const cors = require('cors');
-const { getSeedCities } = require('./data/cities');
+const config = require('./config');
+const { createCityRepository, normalize } = require('./repositories/cityRepository');
 
-/**
- * Normaliza texto para búsquedas: minúsculas y sin tildes.
- * "Bogotá" -> "bogota"
- */
-function normalize(text) {
-  return String(text)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
-/**
- * Valida el cuerpo de POST /api/cities.
- * Devuelve un arreglo de mensajes de error (vacío si es válido).
- */
-function validateCity(body) {
+function validateCityPayload(payload) {
   const errors = [];
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return ['El cuerpo de la petición debe ser un objeto JSON.'];
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { valid: false, errors: ['El cuerpo de la solicitud debe ser un objeto JSON válido.'] };
   }
 
-  const { name, country, continent, population } = body;
+  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+  const country = typeof payload.country === 'string' ? payload.country.trim() : '';
+  const continent =
+    typeof payload.continent === 'string' && payload.continent.trim().length > 0
+      ? payload.continent.trim()
+      : config.defaultContinent;
 
-  if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 80) {
-    errors.push('"name" es obligatorio y debe tener entre 2 y 80 caracteres.');
-  }
-  if (typeof country !== 'string' || country.trim().length < 2 || country.trim().length > 80) {
-    errors.push('"country" es obligatorio y debe tener entre 2 y 80 caracteres.');
-  }
-  if (continent !== undefined && (typeof continent !== 'string' || continent.trim().length > 40)) {
-    errors.push('"continent" debe ser texto de máximo 40 caracteres.');
-  }
-  if (!Number.isInteger(population) || population < 0) {
-    errors.push('"population" es obligatorio y debe ser un entero mayor o igual a 0.');
+  if (name.length < 2 || name.length > 80) {
+    errors.push('El campo "name" es obligatorio y debe tener entre 2 y 80 caracteres.');
   }
 
-  return errors;
+  if (country.length < 2 || country.length > 80) {
+    errors.push('El campo "country" es obligatorio y debe tener entre 2 y 80 caracteres.');
+  }
+
+  const rawPop = payload.population;
+  const population = typeof rawPop === 'number' ? rawPop : Number(rawPop);
+
+  if (
+    rawPop === undefined ||
+    rawPop === null ||
+    rawPop === '' ||
+    !Number.isInteger(population) ||
+    population <= 0 ||
+    population > config.maxPopulation
+  ) {
+    errors.push(`El campo "population" debe ser un número entero positivo menor o igual a ${config.maxPopulation}.`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized: { name, country, continent, population }
+  };
 }
 
-/**
- * Crea una instancia de la aplicación Express con su propio
- * almacenamiento en memoria.
- */
-function createApp(options = {}) {
+function createApp(seedCities) {
   const app = express();
-  const cities = getSeedCities();
-  let nextId = cities.length + 1;
-
-  const corsOrigin = options.corsOrigin || process.env.CORS_ORIGIN || '*';
-  const allowedOrigins = corsOrigin === '*' ? '*' : corsOrigin.split(',').map((o) => o.trim());
+  const repository = createCityRepository(seedCities);
 
   app.disable('x-powered-by');
   app.use(
     cors({
-      origin: allowedOrigins,
+      origin: config.corsOrigin,
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type']
+      allowedHeaders: ['Content-Type', 'Accept']
     })
   );
-  app.use(express.json({ limit: '10kb' }));
+  app.use(express.json({ limit: config.jsonLimit }));
 
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.status(200).json({
       status: 'ok',
       service: 'city-explorer-backend',
@@ -76,59 +72,57 @@ function createApp(options = {}) {
   });
 
   app.get('/api/cities', (req, res) => {
-    const q = typeof req.query.q === 'string' ? normalize(req.query.q) : '';
-    const result = q
-      ? cities.filter((city) =>
-          [city.name, city.country, city.continent].some((field) => normalize(field).includes(q))
-        )
-      : cities;
+    const query = typeof req.query.q === 'string' ? req.query.q : '';
+    const result = repository.findAll({
+      query,
+      limit: req.query.limit,
+      offset: req.query.offset
+    });
 
-    res.status(200).json({ count: result.length, data: result });
+    res.status(200).json(result);
   });
 
   app.post('/api/cities', (req, res) => {
-    const errors = validateCity(req.body);
-    if (errors.length > 0) {
-      return res.status(400).json({ error: 'Datos inválidos', details: errors });
+    const { valid, errors, sanitized } = validateCityPayload(req.body);
+
+    if (!valid) {
+      return res.status(400).json({
+        error: 'Datos de ciudad inválidos.',
+        details: errors
+      });
     }
 
-    const name = req.body.name.trim();
-    const country = req.body.country.trim();
-    const continent = (req.body.continent || 'Sin especificar').trim() || 'Sin especificar';
-
-    const duplicated = cities.some(
-      (city) => normalize(city.name) === normalize(name) && normalize(city.country) === normalize(country)
-    );
-    if (duplicated) {
-      return res
-        .status(409)
-        .json({ error: 'Ciudad duplicada', details: [`${name} (${country}) ya existe.`] });
+    if (repository.hasDuplicate(sanitized.name, sanitized.country)) {
+      return res.status(409).json({
+        error: `La ciudad "${sanitized.name}" en "${sanitized.country}" ya se encuentra registrada.`
+      });
     }
 
-    const city = { id: nextId++, name, country, continent, population: req.body.population };
-    cities.push(city);
-    return res.status(201).json({ data: city });
+    const newCity = repository.create(sanitized);
+    return res.status(201).json({
+      message: 'Ciudad agregada exitosamente.',
+      data: newCity
+    });
   });
 
-  // Rutas inexistentes
-  app.use((req, res) => {
-    res.status(404).json({ error: 'Ruta no encontrada', path: req.originalUrl });
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Recurso no encontrado.' });
   });
 
-  // Manejador de errores (por ejemplo, JSON mal formado)
   // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
+  app.use((err, _req, res, _next) => {
     if (err.type === 'entity.parse.failed') {
-      return res.status(400).json({ error: 'JSON mal formado' });
+      return res.status(400).json({ error: 'JSON mal formado.' });
     }
     if (err.type === 'entity.too.large') {
-      return res.status(413).json({ error: 'Cuerpo de la petición demasiado grande' });
+      return res.status(413).json({ error: 'Cuerpo de la solicitud demasiado grande.' });
     }
-    console.error(err);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    return res.status(500).json({ error: 'Error interno del servidor.' });
   });
 
   return app;
 }
 
-module.exports = { createApp, normalize, validateCity };
+const app = createApp();
+
+module.exports = { app, createApp, normalize, validateCityPayload };
