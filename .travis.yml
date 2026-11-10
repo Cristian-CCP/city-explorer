@@ -1,6 +1,3 @@
-# Travis CI - City Explorer
-os: linux
-dist: jammy
 language: node_js
 node_js:
   - "20"
@@ -8,24 +5,27 @@ node_js:
 services:
   - docker
 
-branches:
-  only:
-    - main
-    - develop
-    - /^feature\/.*$/
-
 cache:
-  npm: true
+  directories:
+    - backend/node_modules
 
 install:
-  - cd backend
-  - npm ci --no-audit --no-fund
-  - cd ..
+  - cd backend && npm ci --no-audit --no-fund && cd ..
 
 script:
-  # 1. Pruebas unitarias / de integración del backend
-  - (cd backend && npm test -- --ci)
-  # 2. Build de las imágenes Docker
-  - docker build -t city-explorer-backend:${TRAVIS_COMMIT:0:7} ./backend
-  - docker build -t city-explorer-frontend:${TRAVIS_COMMIT:0:7} ./frontend
-  - docker image ls | grep city-explorer
+  - cd backend && npm test -- --ci && cd ..
+  - docker build --target runtime -t city-explorer-backend:ci ./backend
+  - docker build --target runtime -t city-explorer-frontend:ci ./frontend
+  - docker compose up -d
+  - |
+    for i in $(seq 1 15); do
+      if curl -fsS http://localhost:8080/health | grep -q '"status":"ok"'; then
+        break
+      fi
+      sleep 2
+    done
+  - curl -fsS http://localhost:8080/health | grep -q '"status":"ok"'
+  - curl -fsS "http://localhost:8080/api/cities?q=colombia" | grep -q '"count":2'
+
+after_script:
+  - docker compose down -v

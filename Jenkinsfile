@@ -1,43 +1,30 @@
-// Jenkinsfile declarativo - City Explorer
-//
-// Requisitos del agente Jenkins:
-//   - Docker y el plugin "docker compose" (v2) instalados y accesibles por el usuario jenkins.
-//   - Plugin "NodeJS" con una instalación llamada "node-20"
-//     (Manage Jenkins > Tools > NodeJS installations).
-//   - curl disponible en el agente.
-
 pipeline {
     agent any
 
-    tools {
-        nodejs 'node-20'
-    }
-
     options {
         timestamps()
-        timeout(time: 20, unit: 'MINUTES')
-        buildDiscarder(logRotator(numToKeepStr: '10'))
         disableConcurrentBuilds()
+        timeout(time: 15, unit: 'MINUTES')
     }
 
     environment {
-        COMPOSE_PROJECT_NAME = 'city-explorer'
-        BACKEND_URL  = 'http://localhost:3000'
-        FRONTEND_URL = 'http://localhost:8080'
+        BACKEND_IMAGE  = 'city-explorer-backend'
+        FRONTEND_IMAGE = 'city-explorer-frontend'
+        IMAGE_TAG      = "${env.BUILD_NUMBER ?: 'latest'}"
+        HEALTH_URL     = 'http://localhost:8080/health'
+        CITIES_URL     = 'http://localhost:8080/api/cities'
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
-                sh 'git log -1 --oneline'
             }
         }
 
         stage('Install') {
             steps {
                 dir('backend') {
-                    sh 'node --version && npm --version'
                     sh 'npm ci --no-audit --no-fund'
                 }
             }
@@ -51,62 +38,43 @@ pipeline {
             }
         }
 
-        stage('Build Docker images') {
+        stage('Build Docker Images') {
             steps {
-                sh 'docker --version && docker compose version'
-                sh 'docker compose build'
-                sh 'docker image ls | grep city-explorer'
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                sh 'docker compose down --remove-orphans || true'
-                sh 'docker compose up -d'
-                sh 'docker compose ps'
-            }
-        }
-
-        stage('Smoke test') {
-            steps {
-                // Espera hasta 60 s a que el backend responda
                 sh '''
-                    for i in $(seq 1 30); do
-                        if curl -fsS "$BACKEND_URL/health"; then
-                            echo ""
-                            echo "Backend OK"
-                            break
-                        fi
-                        echo "Esperando al backend ($i/30)..."
-                        sleep 2
-                    done
-                    curl -fsS "$BACKEND_URL/health"
+                    docker build --target runtime -t ${BACKEND_IMAGE}:${IMAGE_TAG} -t ${BACKEND_IMAGE}:latest ./backend
+                    docker build --target runtime -t ${FRONTEND_IMAGE}:${IMAGE_TAG} -t ${FRONTEND_IMAGE}:latest ./frontend
                 '''
-                // Verifica la comunicación frontend (nginx) -> backend por la red ci-network
+            }
+        }
+
+        stage('Deploy with Compose') {
+            steps {
+                sh 'docker compose up -d --remove-orphans'
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
                 sh '''
-                    for i in $(seq 1 15); do
-                        if curl -fsS "$FRONTEND_URL/api/cities" > /dev/null; then
-                            break
+                    attempt=0
+                    until curl -fsS "${HEALTH_URL}" | grep -q '"status":"ok"'; do
+                        attempt=$((attempt + 1))
+                        if [ "$attempt" -ge 15 ]; then
+                            docker compose ps
+                            docker compose logs --tail=50
+                            exit 1
                         fi
-                        echo "Esperando al frontend ($i/15)..."
                         sleep 2
                     done
-                    curl -fsS "$FRONTEND_URL/health"
-                    echo ""
-                    curl -fsS "$FRONTEND_URL/api/cities?q=colombia"
-                    echo ""
+                    curl -fsS "${CITIES_URL}" | grep -q '"count":'
                 '''
             }
         }
     }
 
     post {
-        success {
-            echo 'Pipeline OK: City Explorer desplegado en http://localhost:8080'
-        }
         failure {
-            sh 'docker compose logs --no-color --tail=100 || true'
-            sh 'docker compose down --remove-orphans || true'
+            sh 'docker compose logs --tail=100 || true'
         }
     }
 }
