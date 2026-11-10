@@ -25,3 +25,6 @@ Thumbs.db
 
 # Entorno virtual de Python (generación del documento)
 .venv/
+
+# Carpeta de entregables académicos (no se sube al repositorio)
+entrega/
