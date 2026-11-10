@@ -1,11 +1,13 @@
 node_modules
 npm-debug.log*
 coverage
+.nyc_output
 .env
 .env.*
 .git
 .gitignore
-.DS_Store
 Dockerfile
 .dockerignore
 README.md
+.DS_Store
+*.md

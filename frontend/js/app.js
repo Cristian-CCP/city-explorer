@@ -1,17 +1,16 @@
-/**
- * City Explorer - Frontend
- *
- * Todas las peticiones usan rutas RELATIVAS (/api/..., /health).
- * Nginx las recibe y las reenvía al contenedor "backend" a través
- * de la red Docker "ci-network". El navegador nunca habla
- * directamente con el backend ni usa "localhost:3000".
- */
 (function () {
   'use strict';
 
   const API_BASE = '/api';
   const HEALTH_URL = '/health';
-  const SEARCH_DEBOUNCE_MS = 300;
+  const SEARCH_DEBOUNCE_MS = 220;
+  const HTML_ESCAPES = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  };
 
   const els = {
     apiStatus: document.getElementById('api-status'),
@@ -30,29 +29,21 @@
   };
 
   const numberFormat = new Intl.NumberFormat('es-CO');
+  const queryCache = new Map();
   let currentController = null;
   let debounceTimer = null;
 
-  /* ---------------- Utilidades ---------------- */
-
   function escapeHtml(value) {
-    return String(value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
   }
 
   async function parseJsonSafe(response) {
     try {
       return await response.json();
-    } catch (e) {
+    } catch (_e) {
       return null;
     }
   }
-
-  /* ---------------- Estado de la UI ---------------- */
 
   function setState(state, message) {
     els.loading.hidden = state !== 'loading';
@@ -75,55 +66,60 @@
     els.formMessage.className = 'form__message' + (type ? ' form__message--' + type : '');
   }
 
-  /* ---------------- Render ---------------- */
-
   function renderCities(cities) {
     els.count.textContent = String(cities.length);
+    els.list.textContent = '';
 
     if (cities.length === 0) {
-      els.list.innerHTML = '';
       setState('empty');
       return;
     }
 
-    els.list.innerHTML = cities
-      .map(function (city) {
-        return (
-          '<li class="city-card">' +
-          '<h3 class="city-card__name">' + escapeHtml(city.name) + '</h3>' +
-          '<p class="city-card__country">' + escapeHtml(city.country) + '</p>' +
-          '<div class="city-card__meta">' +
-          '<span class="city-card__continent">' + escapeHtml(city.continent) + '</span>' +
-          '<span class="city-card__population" title="Población">👥 ' +
-          numberFormat.format(city.population) +
-          '</span>' +
-          '</div>' +
-          '</li>'
-        );
-      })
-      .join('');
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < cities.length; i += 1) {
+      const city = cities[i];
+      const item = document.createElement('li');
+      item.className = 'city-card';
+      item.innerHTML =
+        '<h3 class="city-card__name">' + escapeHtml(city.name) + '</h3>' +
+        '<p class="city-card__country">' + escapeHtml(city.country) + '</p>' +
+        '<div class="city-card__meta">' +
+        '<span class="city-card__continent">' + escapeHtml(city.continent) + '</span>' +
+        '<span class="city-card__population" title="Población">👥 ' +
+        numberFormat.format(city.population) +
+        '</span>' +
+        '</div>';
+      fragment.appendChild(item);
+    }
+
+    els.list.appendChild(fragment);
     setState('ready');
   }
-
-  /* ---------------- Llamadas a la API ---------------- */
 
   async function checkHealth() {
     try {
       const res = await fetch(HEALTH_URL, { headers: { Accept: 'application/json' } });
       setApiStatus(res.ok);
-    } catch (e) {
+    } catch (_e) {
       setApiStatus(false);
     }
   }
 
-  async function loadCities(query) {
+  async function loadCities(query, forceRefresh = false) {
+    const cacheKey = String(query || '').trim().toLowerCase();
+
+    if (!forceRefresh && queryCache.has(cacheKey)) {
+      renderCities(queryCache.get(cacheKey));
+      return;
+    }
+
     if (currentController) {
       currentController.abort();
     }
     currentController = new AbortController();
 
     setState('loading');
-    const url = API_BASE + '/cities' + (query ? '?q=' + encodeURIComponent(query) : '');
+    const url = API_BASE + '/cities' + (cacheKey ? '?q=' + encodeURIComponent(query) : '');
 
     try {
       const res = await fetch(url, {
@@ -137,6 +133,7 @@
       }
 
       setApiStatus(true);
+      queryCache.set(cacheKey, body.data);
       renderCities(body.data);
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -164,8 +161,6 @@
     return body.data;
   }
 
-  /* ---------------- Eventos ---------------- */
-
   els.search.addEventListener('input', function () {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function () {
@@ -175,7 +170,7 @@
 
   els.retry.addEventListener('click', function () {
     checkHealth();
-    loadCities(els.search.value.trim());
+    loadCities(els.search.value.trim(), true);
   });
 
   els.form.addEventListener('submit', async function (event) {
@@ -194,8 +189,8 @@
       setFormMessage('Nombre y país deben tener al menos 2 caracteres.', 'error');
       return;
     }
-    if (formData.get('population') === '' || !Number.isInteger(payload.population) || payload.population < 0) {
-      setFormMessage('La población debe ser un número entero mayor o igual a 0.', 'error');
+    if (formData.get('population') === '' || !Number.isInteger(payload.population) || payload.population <= 0) {
+      setFormMessage('La población debe ser un número entero mayor a 0.', 'error');
       return;
     }
 
@@ -204,9 +199,10 @@
 
     try {
       const city = await createCity(payload);
+      queryCache.clear();
       setFormMessage('✔ ' + city.name + ' se agregó correctamente.', 'success');
       els.form.reset();
-      await loadCities(els.search.value.trim());
+      await loadCities(els.search.value.trim(), true);
     } catch (err) {
       setFormMessage(err.message, 'error');
     } finally {
@@ -215,8 +211,5 @@
     }
   });
 
-  /* ---------------- Inicio ---------------- */
-
-  checkHealth();
-  loadCities('');
+  Promise.all([checkHealth(), loadCities('')]);
 })();
